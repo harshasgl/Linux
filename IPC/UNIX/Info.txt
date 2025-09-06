@@ -1,0 +1,110 @@
+* Socket Types in Network Programming
+===================================
+
+------------------------------------------------------------
+1. SOCK_STREAM (like TCP)
+------------------------------------------------------------
+- Nature: Stream-oriented, connection-based.
+- Reliability: Guaranteed (no data loss, duplication, or corruption).
+- Connection: Required (must connect before communication).
+- Message Boundaries: Not preserved – data is a continuous byte stream.
+- Ordering: Guaranteed.
+
+Analogy: A telephone call – continuous channel once connected.
+Use cases: File transfer, HTTP, SSH, database communication.
+
+------------------------------------------------------------
+2. SOCK_DGRAM (like UDP)
+------------------------------------------------------------
+- Nature: Message-oriented, connectionless.
+- Reliability: Not guaranteed (packets may be lost, duplicated, or out of order).
+- Connection: Not required (sendto / recvfrom).
+- Message Boundaries: Preserved – each sendto matches one recvfrom.
+- Ordering: Not guaranteed.
+
+Analogy: Postal letters – each message is independent.
+Use cases: DNS, video streaming, VoIP, online gaming.
+
+------------------------------------------------------------
+3. SOCK_SEQPACKET
+------------------------------------------------------------
+- Nature: Sequenced, reliable, message-oriented.
+- Reliability: Guaranteed.
+- Connection: Required.
+- Message Boundaries: Preserved.
+- Ordering: Guaranteed.
+
+Analogy: Registered parcels – each message is tracked, ordered, and reliable.
+Use cases: Telecom signaling, message-based protocols in UNIX domain sockets, SCTP.
+
+------------------------------------------------------------
+Quick Examples
+------------------------------------------------------------
+
+SOCK_STREAM (TCP)
+-----------------
+int sock = socket(AF_INET, SOCK_STREAM, 0);
+connect(sock, ...);
+send(sock, "Hello", 5, 0);
+recv(sock, buffer, sizeof(buffer), 0);
+
+SOCK_DGRAM (UDP)
+----------------
+int sock = socket(AF_INET, SOCK_DGRAM, 0);
+sendto(sock, "Hello", 5, 0, (struct sockaddr*)&addr, sizeof(addr));
+recvfrom(sock, buffer, sizeof(buffer), 0, NULL, NULL);
+
+SOCK_SEQPACKET (UNIX Domain)
+----------------------------
+int sock = socket(AF_UNIX, SOCK_SEQPACKET, 0);
+connect(sock, ...);
+send(sock, "Hello", 5, 0);
+recv(sock, buffer, sizeof(buffer), 0);
+
+------------------------------------------------------------------------------------------------------------------------
+* Socket Address Families: AF_INET vs AF_UNIX
+============================================
+
+This document explains the difference between AF_INET and AF_UNIX socket families.
+
+------------------------------------------------------------
+1. AF_INET (Internet Sockets)
+------------------------------------------------------------
+- Meaning: Address Family – Internet (IPv4).
+- Usage: Used for network communication between processes, either on the
+  same machine or across different machines.
+- Addressing: Uses IP address + port (e.g., 127.0.0.1:8080).
+- Protocols: Commonly used with SOCK_STREAM (TCP) and SOCK_DGRAM (UDP).
+- Scope: Works over the network stack (Ethernet, Wi-Fi, etc.).
+
+Example (C structure):
+struct sockaddr_in addr;
+addr.sin_family = AF_INET;
+addr.sin_port = htons(8080);
+addr.sin_addr.s_addr = inet_addr("127.0.0.1");
+
+------------------------------------------------------------
+2. AF_UNIX (Local IPC Sockets)
+------------------------------------------------------------
+- Meaning: Address Family – UNIX (also called AF_LOCAL).
+- Usage: For local inter-process communication (IPC) on the same machine.
+- Addressing: Uses a filesystem path (e.g., /tmp/mysocket) instead of IP/port.
+- Protocols: Can be used with SOCK_STREAM, SOCK_DGRAM, or SOCK_SEQPACKET.
+- Scope: Only works within the same host, does not use the network stack.
+- Performance: Faster than AF_INET because it bypasses networking layers.
+
+Example (C structure):
+struct sockaddr_un addr;
+addr.sun_family = AF_UNIX;
+strcpy(addr.sun_path, "/tmp/mysocket");
+
+------------------------------------------------------------
+Comparison
+------------------------------------------------------------
+- AF_INET → Uses IP address + port, works across machines via network.
+- AF_UNIX → Uses filesystem path, works only locally, faster IPC.
+
+In short:
+- AF_INET = network sockets (local or remote communication).
+- AF_UNIX = local sockets (same machine only, faster).
+
