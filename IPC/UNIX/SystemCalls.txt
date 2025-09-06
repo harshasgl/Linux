@@ -157,3 +157,537 @@ Summary
 - connect() → Connect to server (client).
 
 All return -1 on failure and set errno.
+
+======================================================
+* Socket Data Transfer System Calls Reference (Detailed)
+======================================================
+
+These system calls are used after a connection is established (for TCP)
+or for sending/receiving messages (for UDP, UNIX domain datagram).
+
+------------------------------------------------------------
+1. send()
+------------------------------------------------------------
+Prototype:
+ssize_t send(int sockfd, const void *buf, size_t len, int flags);
+
+What:
+- Sends data on a connected socket (TCP or connected UDP).
+- Equivalent to write() but allows flags for finer control.
+- For TCP: Places data into the kernel’s send buffer (not guaranteed that peer has received yet).
+- For UDP: Sends a datagram to the connected peer.
+
+Why:
+- To transmit data from one endpoint to another.
+
+Parameters:
+- sockfd: Socket descriptor.
+- buf: Pointer to data to send.
+- len: Length of data.
+- flags: Usually 0, can modify behavior (e.g., MSG_DONTWAIT, MSG_OOB).
+
+Return Values:
+- Success: Number of bytes actually sent (may be less than len).
+- Failure: -1, errno set.
+
+Common Errors:
+- EPIPE → Connection closed by peer.
+- ECONNRESET → Connection reset by peer.
+- ENOTCONN → Socket not connected.
+- EAGAIN / EWOULDBLOCK → Non-blocking mode and no buffer space available.
+
+Usage:
+- Used by client and server for connected sockets (e.g., after accept() or connect()).
+
+------------------------------------------------------------
+2. recv()
+------------------------------------------------------------
+Prototype:
+ssize_t recv(int sockfd, void *buf, size_t len, int flags);
+
+What:
+- Receives data from a connected socket (TCP or connected UDP).
+- Blocks until data is available (unless non-blocking or flags change behavior).
+- For TCP: Reads stream data.
+- For UDP: Reads a datagram from connected peer.
+
+Why:
+- To read data sent by the peer.
+
+Parameters:
+- sockfd: Socket descriptor.
+- buf: Buffer where data will be copied.
+- len: Maximum bytes to receive.
+- flags: Usually 0 (can use MSG_WAITALL, MSG_PEEK, etc.).
+
+Return Values:
+- Success: Number of bytes actually received.
+- 0 → Connection closed (EOF for TCP).
+- Failure: -1, errno set.
+
+Common Errors:
+- ECONNRESET → Connection reset by peer.
+- ENOTCONN → Socket not connected.
+- EAGAIN / EWOULDBLOCK → No data in non-blocking mode.
+- EINTR → Interrupted by signal.
+
+Usage:
+- Used by both server and client to read incoming data.
+
+------------------------------------------------------------
+3. sendto()
+------------------------------------------------------------
+Prototype:
+ssize_t sendto(int sockfd, const void *buf, size_t len, int flags,
+               const struct sockaddr *dest_addr, socklen_t addrlen);
+
+What:
+- Sends data to a specific destination address.
+- Required for connectionless sockets (UDP, AF_UNIX datagram).
+- For TCP sockets already connected, dest_addr is ignored.
+
+Why:
+- Enables sending datagrams to different peers without establishing connection.
+
+Return Values:
+- Success: Number of bytes sent.
+- Failure: -1, errno set.
+
+Common Errors:
+- EACCES → Permission denied (e.g., broadcast without option enabled).
+- EADDRNOTAVAIL → Invalid address.
+- EMSGSIZE → Message too large for protocol.
+- ENETUNREACH → No route to destination.
+
+Usage:
+- For UDP or AF_UNIX datagram servers/clients.
+
+------------------------------------------------------------
+4. recvfrom()
+------------------------------------------------------------
+Prototype:
+ssize_t recvfrom(int sockfd, void *buf, size_t len, int flags,
+                 struct sockaddr *src_addr, socklen_t *addrlen);
+
+What:
+- Receives data from a socket and records the sender’s address.
+- Essential for datagram sockets where multiple peers can send data.
+
+Why:
+- To know which client sent the data in connectionless communication.
+
+Return Values:
+- Success: Number of bytes received.
+- 0 → Remote side closed connection (rare in UDP, common in TCP).
+- Failure: -1, errno set.
+
+Common Errors:
+- EAGAIN / EWOULDBLOCK → No data, non-blocking mode.
+- EINTR → Interrupted by signal.
+- ECONNRESET → For UDP, indicates ICMP error received.
+
+Usage:
+- For UDP servers to read messages from clients.
+
+------------------------------------------------------------
+5. write() and read()
+------------------------------------------------------------
+Prototypes:
+ssize_t write(int fd, const void *buf, size_t count);
+ssize_t read(int fd, void *buf, size_t count);
+
+What:
+- General-purpose file I/O system calls, also valid for sockets.
+- For TCP sockets: behave like send()/recv() with flags=0.
+- For UDP sockets: work only if socket is connected (peer set with connect()).
+
+Why:
+- Simpler than send/recv when no special flags are required.
+- Makes sockets behave like files.
+
+Return Values:
+- write():
+   Success: Number of bytes written (may be less than count).
+   Failure: -1, errno set.
+- read():
+   Success: Number of bytes read.
+   0 → End-of-file (connection closed).
+   Failure: -1, errno set.
+
+Common Errors:
+- Same as send()/recv() for sockets.
+- EPIPE on write() if peer closed connection.
+
+Usage:
+- Useful when treating sockets uniformly with file descriptors (select(), poll()).
+
+------------------------------------------------------------
+Summary
+------------------------------------------------------------
+- send()/recv() → For connected sockets (TCP/UDP with connect()).
+- sendto()/recvfrom() → For datagram sockets (UDP, AF_UNIX datagram).
+- write()/read() → Generic I/O, works on sockets, no flags.
+
+Key Points:
+- Return value may be less than requested length (must handle partial sends/receives).
+- All return -1 on failure and set errno.
+- recv() returning 0 means the connection is closed.
+
+============================================
+* Advanced Socket I/O: sendmsg() and recvmsg()
+============================================
+
+These calls provide full control over sending and receiving data on sockets,
+including multiple buffers, control messages (ancillary data), and sender/receiver
+addresses. They generalize send/recv/sendto/recvfrom.
+
+------------------------------------------------------------
+1. sendmsg()
+------------------------------------------------------------
+Prototype:
+ssize_t sendmsg(int sockfd, const struct msghdr *msg, int flags);
+
+What:
+- Sends a message from one or more buffers to a socket.
+- Allows specifying destination address (like sendto).
+- Allows sending ancillary (control) data (e.g., file descriptors, credentials).
+- Supports scatter/gather I/O (send data from multiple buffers in one call).
+
+Why:
+- More powerful than send()/sendto():
+   • Can send multiple buffers (no need to copy into one big buffer).
+   • Can send control info (like passing a file descriptor in AF_UNIX).
+   • Can specify destination (like sendto).
+
+Parameters:
+- sockfd: Socket descriptor.
+- msg: Pointer to msghdr structure containing:
+    • msg_name → destination address (sockaddr *) or NULL if connected.
+    • msg_namelen → size of address.
+    • msg_iov → array of iovec structures (each has pointer + length).
+    • msg_iovlen → number of iovecs.
+    • msg_control → ancillary (control) data buffer.
+    • msg_controllen → length of control buffer.
+    • msg_flags → ignored in sendmsg.
+- flags: Same as send() (e.g., MSG_DONTWAIT, MSG_CONFIRM, MSG_MORE).
+
+Return Values:
+- Success: Number of bytes sent.
+- Failure: -1, errno set.
+
+Common Errors:
+- EACCES → Permission denied.
+- EMSGSIZE → Message too large.
+- EFAULT → Bad buffer address.
+- EAGAIN / EWOULDBLOCK → Non-blocking and cannot send now.
+- ENOTCONN → Socket not connected (if msg_name is NULL and no prior connect()).
+
+Usage:
+- Used for advanced use-cases:
+   • Sending multiple buffers at once.
+   • Sending file descriptors over UNIX domain sockets.
+   • Sending packets with control headers in raw sockets.
+
+------------------------------------------------------------
+2. recvmsg()
+------------------------------------------------------------
+Prototype:
+ssize_t recvmsg(int sockfd, struct msghdr *msg, int flags);
+
+What:
+- Receives a message from a socket into one or more buffers.
+- Can also receive ancillary (control) data (like file descriptors).
+- Can capture sender’s address (like recvfrom).
+- Supports scatter/gather I/O (store data in multiple buffers at once).
+
+Why:
+- More powerful than recv()/recvfrom():
+   • Can receive into multiple buffers without copying.
+   • Can receive ancillary data (like credentials, FDs).
+   • Can obtain source address info directly in msghdr.
+
+Parameters:
+- sockfd: Socket descriptor.
+- msg: Pointer to msghdr structure that will hold:
+    • msg_name → buffer for source address.
+    • msg_namelen → size of address buffer (modified on return).
+    • msg_iov → array of buffers to store received data.
+    • msg_iovlen → number of buffers.
+    • msg_control → buffer for control data.
+    • msg_controllen → length of control buffer (modified on return).
+    • msg_flags → set by kernel to indicate special conditions (MSG_TRUNC, MSG_CTRUNC, etc.).
+- flags: Same as recv() (e.g., MSG_PEEK, MSG_DONTWAIT, MSG_WAITALL).
+
+Return Values:
+- Success: Number of bytes received.
+- 0 → Peer has performed an orderly shutdown (TCP).
+- Failure: -1, errno set.
+
+Common Errors:
+- EAGAIN / EWOULDBLOCK → No data (non-blocking mode).
+- EMSGSIZE → Message truncated (datagram larger than buffer).
+- EFAULT → Bad address.
+- EINTR → Interrupted by signal.
+- ENOTCONN → Socket not connected.
+
+Usage:
+- Used for:
+   • Receiving multiple buffers in one call.
+   • Receiving sender’s address (like recvfrom).
+   • Receiving ancillary data (like file descriptor passing).
+   • High-performance network code (less data copying).
+
+------------------------------------------------------------
+Summary
+------------------------------------------------------------
+- sendmsg() / recvmsg() = superset of send/recv/sendto/recvfrom.
+- They enable:
+   • Scatter/Gather I/O → send/recv multiple buffers at once.
+   • Ancillary Data → pass extra info (e.g., file descriptors).
+   • Address Handling → send/recv with explicit peer addresses.
+- Return value: number of bytes sent/received, -1 on error.
+- recvmsg() returning 0 → peer closed connection.
+
+In practice:
+- Use send()/recv() for simple connected sockets.
+- Use sendto()/recvfrom() for UDP datagrams.
+- Use sendmsg()/recvmsg() for advanced IPC or networking (file descriptor passing, raw sockets, zero-copy I/O).
+
+==========================
+* Socket Options Reference
+==========================
+
+Sockets can be configured at runtime using getsockopt() and setsockopt().
+They allow fine-grained control over socket behavior.
+
+------------------------------------------------------------
+1. setsockopt()
+------------------------------------------------------------
+Prototype:
+int setsockopt(int sockfd, int level, int optname,
+               const void *optval, socklen_t optlen);
+
+What:
+- Sets (changes) an option for a socket.
+- Options can affect performance, behavior, or security.
+- "level" specifies protocol level (SOL_SOCKET, IPPROTO_TCP, etc.).
+
+Why:
+- Allows tuning buffer sizes, enabling features like credential passing,
+  changing TCP behavior, enabling broadcasts, etc.
+
+Parameters:
+- sockfd: Socket descriptor.
+- level: Protocol level (commonly SOL_SOCKET for generic socket options).
+- optname: Name of the option (e.g., SO_SNDBUF).
+- optval: Pointer to the new value.
+- optlen: Size of optval.
+
+Return Values:
+- Success: 0.
+- Failure: -1, errno set.
+
+Common Errors:
+- ENOPROTOOPT → Option not supported.
+- EINVAL → Invalid value for option.
+- ENOMEM → Insufficient memory.
+- EBADF → Invalid socket descriptor.
+
+------------------------------------------------------------
+2. getsockopt()
+------------------------------------------------------------
+Prototype:
+int getsockopt(int sockfd, int level, int optname,
+               void *optval, socklen_t *optlen);
+
+What:
+- Retrieves the current value of a socket option.
+
+Why:
+- To inspect current buffer sizes, check if options like SO_PASSCRED are enabled,
+  or read status information.
+
+Parameters:
+- sockfd: Socket descriptor.
+- level: Protocol level.
+- optname: Name of the option to query.
+- optval: Pointer to buffer where result will be stored.
+- optlen: In/out parameter specifying size of optval.
+
+Return Values:
+- Success: 0.
+- Failure: -1, errno set.
+
+Common Errors:
+- ENOPROTOOPT → Option not supported.
+- EBADF → Invalid socket descriptor.
+- EFAULT → optval not accessible.
+
+------------------------------------------------------------
+3. Common Socket Options
+------------------------------------------------------------
+
+a. SO_RCVBUF (SOL_SOCKET)
+- Type: int (bytes)
+- Purpose: Set/get receive buffer size.
+- Larger buffer → handles more incoming data.
+
+b. SO_SNDBUF (SOL_SOCKET)
+- Type: int (bytes)
+- Purpose: Set/get send buffer size.
+- Larger buffer → allows more queued outgoing data.
+
+c. SO_REUSEADDR (SOL_SOCKET)
+- Type: int (0/1)
+- Purpose: Allows reusing a local address/port immediately after a socket closes.
+- Common for servers that restart frequently.
+
+d. SO_KEEPALIVE (SOL_SOCKET)
+- Type: int (0/1)
+- Purpose: Enables TCP keepalive probes to detect dead peers.
+
+e. SO_PASSCRED (SOL_SOCKET, Linux only, AF_UNIX)
+- Type: int (0/1)
+- Purpose: Pass sender credentials (PID, UID, GID) with messages.
+- For secure IPC.
+
+f. SO_PEERCRED (SOL_SOCKET, Linux only, AF_UNIX)
+- Type: struct ucred
+     struct ucred { pid_t pid; uid_t uid; gid_t gid; };
+- Purpose: Query peer credentials on connected UNIX socket.
+
+------------------------------------------------------------
+4. Examples
+------------------------------------------------------------
+
+Set receive buffer size:
+int size = 65536;
+setsockopt(sockfd, SOL_SOCKET, SO_RCVBUF, &size, sizeof(size));
+
+Get receive buffer size:
+int size; socklen_t optlen = sizeof(size);
+getsockopt(sockfd, SOL_SOCKET, SO_RCVBUF, &size, &optlen);
+
+Enable SO_PASSCRED on UNIX socket:
+int enable = 1;
+setsockopt(sockfd, SOL_SOCKET, SO_PASSCRED, &enable, sizeof(enable));
+
+Get peer credentials (SO_PEERCRED):
+struct ucred cred;
+socklen_t len = sizeof(cred);
+getsockopt(sockfd, SOL_SOCKET, SO_PEERCRED, &cred, &len);
+printf("Peer PID=%d UID=%d GID=%d\n", cred.pid, cred.uid, cred.gid);
+
+------------------------------------------------------------
+5. Summary
+------------------------------------------------------------
+- setsockopt() → configure behavior (send/recv buffer sizes, enable features).
+- getsockopt() → query current values.
+- Both return 0 on success, -1 on failure (check errno).
+- Important options:
+   • SO_PASSCRED → receive sender credentials (AF_UNIX).
+   • SO_PEERCRED → query connected peer credentials (AF_UNIX).
+   • SO_RCVBUF → set/get receive buffer size.
+   • SO_SNDBUF → set/get send buffer size.
+------------------------------------------------------------
+Protocol Levels
+------------------------------------------------------------
+Options are grouped by protocol level:
+
+- SOL_SOCKET → Generic socket-level options (e.g., buffers, credentials, reuse).
+- IPPROTO_IP → IPv4-specific options.
+- IPPROTO_IPV6 → IPv6-specific options.
+- IPPROTO_TCP → TCP-specific options.
+- IPPROTO_UDP → UDP-specific options.
+
+Most common options are under SOL_SOCKET.
+
+===============================
+* Closing and Cleaning Up Sockets
+===============================
+
+When finished with sockets, you must close them properly. For UNIX domain sockets,
+you may also need to unlink() the socket file from the filesystem.
+
+------------------------------------------------------------
+1. close()
+------------------------------------------------------------
+Prototype:
+int close(int fd);
+
+What:
+- Closes a file descriptor (including sockets).
+- Releases system resources.
+- If it’s the last reference, the underlying socket connection is terminated.
+
+Why:
+- Standard way to free socket descriptors.
+
+Return Values:
+- Success → 0
+- Failure → -1 (errno set)
+
+Notes:
+- TCP: Sends FIN if possible, may discard buffered data.
+- UDP: Just releases resources.
+- Still must be called even after shutdown().
+
+------------------------------------------------------------
+2. shutdown()
+------------------------------------------------------------
+Prototype:
+int shutdown(int sockfd, int how);
+
+What:
+- Disables part or all of the socket’s communication.
+- Unlike close(), the socket descriptor remains valid.
+
+Why:
+- Allows "half-close":
+   • Stop sending but continue receiving.
+   • Stop receiving but continue sending.
+
+Parameters (how):
+- SHUT_RD (0)  → Disable reading.
+- SHUT_WR (1)  → Disable writing (sends FIN for TCP).
+- SHUT_RDWR (2) → Disable both directions.
+
+Return Values:
+- Success → 0
+- Failure → -1 (errno set)
+
+Notes:
+- Common use: shutdown(sockfd, SHUT_WR) when client has finished sending a request but still expects a reply.
+
+------------------------------------------------------------
+3. unlink()  (for AF_UNIX sockets)
+------------------------------------------------------------
+Prototype:
+int unlink(const char *pathname);
+
+What:
+- Removes (deletes) a name from the filesystem.
+- For AF_UNIX sockets, the socket is represented by a special file (e.g., /tmp/mysock).
+- unlink() removes this file when the socket is no longer needed.
+
+Why:
+- If not unlinked, stale socket files can remain in /tmp, preventing new binds.
+- Good practice for servers using AF_UNIX sockets.
+
+Return Values:
+- Success → 0
+- Failure → -1 (errno set, e.g., ENOENT if file does not exist).
+
+Example:
+unlink("/tmp/mysocket");
+
+------------------------------------------------------------
+Example Flow (UNIX socket server)
+------------------------------------------------------------
+1. socket(AF_UNIX, SOCK_STREAM, 0);
+2. bind() → creates /tmp/mysocket
+3. listen(), accept(), communicate...
+4. close(client_sock);
+5. close(server_sock);
+6. unlink("/tmp/mysocket");  // cleanup
+
