@@ -1,0 +1,159 @@
+Socket System Calls Reference (Detailed)
+========================================
+* Socket Creation & Setup
+========================================
+------------------------------------------------------------
+1. socket()
+------------------------------------------------------------
+Prototype:
+int socket(int domain, int type, int protocol);
+
+What:
+- Creates a new socket (endpoint for communication).
+- Returns a file descriptor (integer) that represents the socket.
+- Internally, the kernel allocates resources and sets up protocol control blocks.
+
+Parameters:
+- domain: Address family (e.g., AF_INET, AF_UNIX, AF_INET6).
+- type: Communication type (SOCK_STREAM, SOCK_DGRAM, SOCK_SEQPACKET).
+- protocol: Usually 0 (system chooses default: TCP for SOCK_STREAM, UDP for SOCK_DGRAM).
+
+Why:
+- This is the very first step in network communication.
+- Without a socket, there is no communication endpoint.
+
+Return Values:
+- Success: Non-negative integer (socket file descriptor).
+- Failure: -1, and errno is set.
+
+Common Errors:
+- EAFNOSUPPORT → Unsupported address family.
+- EPROTONOSUPPORT → Protocol not supported.
+- EMFILE / ENFILE → Too many open file descriptors.
+- ENOBUFS / ENOMEM → Insufficient resources.
+
+Usage:
+- Both client and server call socket() first.
+
+------------------------------------------------------------
+2. bind()
+------------------------------------------------------------
+Prototype:
+int bind(int sockfd, const struct sockaddr *addr, socklen_t addrlen);
+
+What:
+- Assigns a local address (IP + port for AF_INET, file path for AF_UNIX) to a socket.
+- For AF_INET, this sets the local IP and port the socket will use.
+- For AF_UNIX, this associates the socket with a filesystem pathname.
+
+Why:
+- Server: Necessary so that clients know where to connect.
+- Client: Optional, system automatically assigns ephemeral port if not called.
+
+Return Values:
+- Success: 0.
+- Failure: -1, and errno is set.
+
+Common Errors:
+- EADDRINUSE → Address already in use.
+- EADDRNOTAVAIL → Specified address not available on this host.
+- EACCES → Permission denied (e.g., binding to privileged ports < 1024 without root).
+- EINVAL → Invalid socket state.
+
+Usage:
+- Typically used by servers after socket() and before listen().
+- Clients usually skip bind() unless binding to a specific IP/port is required.
+
+------------------------------------------------------------
+3. listen()
+------------------------------------------------------------
+Prototype:
+int listen(int sockfd, int backlog);
+
+What:
+- Marks the socket as passive (ready to accept connections).
+- Converts an unconnected socket into a listening socket.
+- backlog defines the maximum number of pending connections in the queue.
+
+Why:
+- Server must call listen() so the kernel can queue incoming connection requests.
+- Without listen(), accept() will not work.
+
+Return Values:
+- Success: 0.
+- Failure: -1, and errno is set.
+
+Common Errors:
+- EADDRINUSE → Another socket already listening on the same port.
+- EOPNOTSUPP → Socket type does not support listen (e.g., SOCK_DGRAM).
+- ENOTSOCK → Descriptor is not a socket.
+
+Usage:
+- Server calls listen() after bind() and before accept().
+
+------------------------------------------------------------
+4. accept()
+------------------------------------------------------------
+Prototype:
+int accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen);
+
+What:
+- Accepts the first pending connection request from the listen queue.
+- Creates a new socket descriptor for communication with that client.
+- The listening socket remains open and can accept more clients.
+
+Why:
+- Separates the listening socket from client communication.
+- Allows server to handle multiple clients simultaneously.
+
+Return Values:
+- Success: New non-negative socket descriptor for the client connection.
+- Failure: -1, and errno is set.
+
+Common Errors:
+- EAGAIN / EWOULDBLOCK → No pending connections (non-blocking mode).
+- ECONNABORTED → Connection aborted before accept completed.
+- EINTR → Interrupted by a signal before connection was accepted.
+- ENOTSOCK → Descriptor is not a socket.
+
+Usage:
+- Server calls accept() inside a loop to handle multiple clients.
+
+------------------------------------------------------------
+5. connect()
+------------------------------------------------------------
+Prototype:
+int connect(int sockfd, const struct sockaddr *addr, socklen_t addrlen);
+
+What:
+- Initiates an active connection from client to server.
+- For TCP, performs a 3-way handshake with the server.
+- For UDP, sets a default peer address (optional).
+
+Why:
+- Client needs to establish connection to a known server endpoint (IP + port or UNIX path).
+
+Return Values:
+- Success: 0.
+- Failure: -1, and errno is set.
+
+Common Errors:
+- ECONNREFUSED → No process listening on the target address/port.
+- ETIMEDOUT → Connection attempt timed out.
+- ENETUNREACH → Network unreachable.
+- EADDRNOTAVAIL → Invalid server address.
+- EINPROGRESS → Non-blocking mode: connection is in progress.
+
+Usage:
+- Used by client after socket() to connect to server.
+
+------------------------------------------------------------
+Summary
+------------------------------------------------------------
+- socket() → Create endpoint.
+- bind() → Assign address to socket (server).
+- listen() → Ready to accept connections (server).
+- accept() → Accept client connection (server).
+- connect() → Connect to server (client).
+
+All return -1 on failure and set errno.
